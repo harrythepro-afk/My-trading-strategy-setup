@@ -65,7 +65,7 @@ To ensure that selling or buying pressure is completely exhausted before entry, 
 
 ### 1. Dynamic Risk Sizing
 The engine uses **Fixed Dollar Risk Sizing** to ensure that every trade risks exactly a predefined dollar amount, regardless of volatility or Stop Loss width:
-$$\text{Position Size} = \frac{\text{Risk Capital (\$)}}{\left| \text{Entry Price} - \text{Stop Loss Price} \right|}$$
+$$\text{Position Size} = \frac{\text{Risk Capital (USD)}}{\left| \text{Entry Price} - \text{Stop Loss Price} \right|}$$
 
 ### 2. Execution Fees & Slippage Buffer
 Both backtesting and live simulation implement realistic taker fees and slippage modeling:
