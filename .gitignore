@@ -16,3 +16,6 @@ paper_trades.json
 .gemini/
 .idea/
 .vscode/
+*resume*
+*study_guide*
+*walkthrough*
