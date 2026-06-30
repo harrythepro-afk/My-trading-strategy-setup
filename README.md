@@ -23,8 +23,8 @@ Bypassing basic, lagging retail indicator crossovers (e.g., RSI/MACD), this plat
                      (Dynamic Rolling Windows & EMAs)
                                    │
                                    ▼
-                   [ Bi-Directional State Machines ]
-                      (Single / Double Sweep Spring)
+                    [ Bi-Directional State Machines ]
+              (Single / Double / Triple / Quad Sweep)
                                    │
                                    ▼
                   [ Performance-Optimized Broker ]
@@ -40,10 +40,11 @@ Large market participants (institutions, high-frequency desks) require substanti
 * **The 24h Low Sweep (LONG)**: Pushing price below the rolling session low to force-trigger retail Sell Stop-Loss orders (creating sell liquidity), which the algorithm buys at a deep premium discount, followed by a level reclaim.
 * **The 24h High Sweep (SHORT)**: Driving price above the rolling session high to trigger retail Buy Stop-Loss orders (creating buy liquidity), allowing the algorithm to short at a premium, followed by a level reclaim.
 
-### 2. Wyckoff Accumulation & Double Sweep Logic
-To ensure that selling or buying pressure is completely exhausted before entry, the engine supports a standard **Single-Sweep** model as well as a **Double-Sweep (Wyckoff Spring/Upthrust with a Test)** model:
-* **LONG (Wyckoff Spring)**: Sweeps rolling support ➔ reclaims ➔ sweeps lower (spring/test) to wash out trailing buyers ➔ structural breakout reclaim ➔ **LONG Entry** 🟢.
-* **SHORT (Wyckoff Upthrust)**: Sweeps rolling resistance ➔ reclaims ➔ sweeps higher (upthrust/test) ➔ structural breakdown reclaim ➔ **SHORT Entry** 🔴.
+### 2. Multi-Sweep & Wyckoff Spring/Upthrust Logic
+To ensure that selling or buying pressure is completely exhausted before entry, the engine supports:
+* **Single-Sweep**: Standard stop-hunt and level reclaim.
+* **Double-Sweep (Wyckoff Spring/Upthrust with a Test)**: Sweeps rolling level ➔ reclaims ➔ sweeps again (testing the spring/upthrust) to wash out trailing participants ➔ structural breakout/breakdown reclaim ➔ Entry.
+* **Triple / Quadruple-Sweep**: Advanced multi-stage stop-hunt tracking to capture deep institutional liquidity pools, with built-in breakout protection/flips to enter a breakout trade if the level fails.
 
 ---
 
