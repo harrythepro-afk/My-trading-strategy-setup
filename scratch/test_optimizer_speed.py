@@ -1,9 +1,15 @@
+import time
 import pandas as pd
 import numpy as np
+import sys
+sys.path.append('.')
+
+from src.data_loader import fetch_extended_history
 from src.strategy import generate_signals, calculate_indicators
 from src.engine import run_backtest
+from src.optimizer import run_grid_search as original_run_grid_search
 
-def run_grid_search(
+def optimized_run_grid_search(
     df_dict: dict,
     initial_balance: float = 10000.0,
     risk_per_trade: float = 100.0,
@@ -14,49 +20,20 @@ def run_grid_search(
     trade_direction: str = "both",
     rolling_window: int = 96,
     trigger_modes: list = ["engulfing"],
-    trigger_logic: str = "OR",
-    use_trailing_sl: bool = False,
-    trailing_trigger_pct: float = 1.5,
-    trailing_distance_pct: float = 1.0,
-    max_concurrent_trades: int = 2,
-    use_fixed_session_levels: bool = False,
-    use_atr_penetration: bool = False,
-    atr_penetration_factor: float = 0.25,
-    use_atr_tp: bool = False,
-    atr_tp_factor: float = 2.5,
-    use_time_filter: bool = False,
-    enable_breakout_reversal: bool = False,
-    breakout_sl_pct: float = 20.0,
-    breakout_only: bool = False,
-    enable_quad_breakout: bool = False,
-    enable_double_breakout: bool = False,
-    enable_single_breakout: bool = False,
-    custom_tp_dict: dict = None
+    trigger_logic: str = "OR"
 ) -> pd.DataFrame:
-    """
-    Parametric optimizer updated to pre-generate base signals and perform vectorized updates 
-    for SL/TP levels, using all active sidebar configuration settings.
-    """
     results = []
     
     rr_grid = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
     sl_grid = [0.5, 1.0, 1.5, 2.0]
     tp_grid = [1.0, 2.0, 3.0, 4.0, 5.0]
     
-    # 1. Pre-calculate indicators once
+    # Pre-calculate indicators once
     precalc_df_dict = {}
     for sym, df in df_dict.items():
         precalc_df_dict[sym] = calculate_indicators(df.copy(), rolling_window=rolling_window)
         
-    # 2. Pre-generate base structure signals once
-    # For Wick Structure optimization, set all custom R:R parameters to 1.0 in the base run
-    base_tp_dict = None
-    if custom_tp_dict:
-        base_tp_dict = custom_tp_dict.copy()
-        for k in ["double_rr", "triple_rr", "quad_rr", "single_breakout_rr", "double_breakout_rr", "triple_breakout_rr", "quad_breakout_rr"]:
-            if k in base_tp_dict:
-                base_tp_dict[k] = 1.0
-
+    # Pre-generate base structures once
     base_structure_dict = {}
     for sym, df in precalc_df_dict.items():
         base_structure_dict[sym] = generate_signals(
@@ -68,23 +45,10 @@ def run_grid_search(
             rr_ratio=1.0,
             rolling_window=rolling_window,
             trigger_modes=trigger_modes,
-            trigger_logic=trigger_logic,
-            use_fixed_session_levels=use_fixed_session_levels,
-            use_atr_penetration=use_atr_penetration,
-            atr_penetration_factor=atr_penetration_factor,
-            use_atr_tp=use_atr_tp,
-            atr_tp_factor=atr_tp_factor,
-            use_time_filter=use_time_filter,
-            enable_breakout_reversal=enable_breakout_reversal,
-            breakout_sl_pct=breakout_sl_pct,
-            breakout_only=breakout_only,
-            enable_quad_breakout=enable_quad_breakout,
-            enable_double_breakout=enable_double_breakout,
-            enable_single_breakout=enable_single_breakout,
-            custom_tp_dict=base_tp_dict
+            trigger_logic=trigger_logic
         )
         
-    # 3. Pre-generate base percentage signals once
+    # Pre-generate base percentages once
     base_pct_dict = {}
     for sym, df in precalc_df_dict.items():
         base_pct_dict[sym] = generate_signals(
@@ -97,23 +61,10 @@ def run_grid_search(
             fixed_tp_pct=1.0,
             rolling_window=rolling_window,
             trigger_modes=trigger_modes,
-            trigger_logic=trigger_logic,
-            use_fixed_session_levels=use_fixed_session_levels,
-            use_atr_penetration=use_atr_penetration,
-            atr_penetration_factor=atr_penetration_factor,
-            use_atr_tp=use_atr_tp,
-            atr_tp_factor=atr_tp_factor,
-            use_time_filter=use_time_filter,
-            enable_breakout_reversal=enable_breakout_reversal,
-            breakout_sl_pct=breakout_sl_pct,
-            breakout_only=breakout_only,
-            enable_quad_breakout=enable_quad_breakout,
-            enable_double_breakout=enable_double_breakout,
-            enable_single_breakout=enable_single_breakout,
-            custom_tp_dict=custom_tp_dict
+            trigger_logic=trigger_logic
         )
         
-    # 4. Optimize Wick Structure setups
+    # 1. Optimize Wick Structure setups
     for rr in rr_grid:
         temp_dict = {}
         for sym, base_df in base_structure_dict.items():
@@ -126,14 +77,8 @@ def run_grid_search(
             buy_mask = sig == 1
             sell_mask = sig == -1
             
-            # Reconstruct original entry price and risk from the base run (which had rr_ratio=1.0)
-            # Since tp_base = 2 * entry_price - sl, we have entry_price = (tp_base + sl) / 2
-            entry_price = (tp + sl) / 2
-            risk = np.abs(entry_price - sl)
-            
-            if not use_atr_tp:
-                tp[buy_mask] = entry_price[buy_mask] + rr * risk[buy_mask]
-                tp[sell_mask] = entry_price[sell_mask] - rr * risk[sell_mask]
+            tp[buy_mask] = close[buy_mask] + rr * (close[buy_mask] - sl[buy_mask])
+            tp[sell_mask] = close[sell_mask] - rr * (sl[sell_mask] - close[sell_mask])
             
             df_copy["tp_level"] = tp
             temp_dict[sym] = df_copy
@@ -143,11 +88,7 @@ def run_grid_search(
             initial_balance=initial_balance, 
             risk_per_trade=risk_per_trade,
             fee_pct=fee_pct,
-            slippage_pct=slippage_pct,
-            use_trailing_sl=use_trailing_sl,
-            trailing_trigger_pct=trailing_trigger_pct,
-            trailing_distance_pct=trailing_distance_pct,
-            max_concurrent_trades=max_concurrent_trades
+            slippage_pct=slippage_pct
         )
         
         metrics = backtest_res["metrics"]
@@ -161,7 +102,7 @@ def run_grid_search(
             "Sharpe Ratio": metrics["sharpe_ratio"]
         })
         
-    # 5. Optimize Fixed Percentage setups
+    # 2. Optimize Fixed Percentage setups
     for sl in sl_grid:
         for tp in tp_grid:
             if tp < sl:
@@ -196,11 +137,7 @@ def run_grid_search(
                 initial_balance=initial_balance, 
                 risk_per_trade=risk_per_trade,
                 fee_pct=fee_pct,
-                slippage_pct=slippage_pct,
-                use_trailing_sl=use_trailing_sl,
-                trailing_trigger_pct=trailing_trigger_pct,
-                trailing_distance_pct=trailing_distance_pct,
-                max_concurrent_trades=max_concurrent_trades
+                slippage_pct=slippage_pct
             )
             
             metrics = backtest_res["metrics"]
@@ -218,3 +155,33 @@ def run_grid_search(
     res_df = res_df.sort_values(by=["Sharpe Ratio", "Net Profit ($)"], ascending=False).reset_index(drop=True)
     
     return res_df
+
+# Load some test data
+print("Loading data for test...")
+df = fetch_extended_history("BTCUSDT", "15m", 30)
+df_dict = {"BTCUSDT": df}
+
+print("Running original grid search...")
+t0 = time.time()
+res_orig = original_run_grid_search(df_dict)
+t_orig = time.time() - t0
+print(f"Original finished in {t_orig:.4f} seconds.")
+
+print("Running optimized grid search...")
+t0 = time.time()
+res_opt = optimized_run_grid_search(df_dict)
+t_opt = time.time() - t0
+print(f"Optimized finished in {t_opt:.4f} seconds.")
+
+print(f"Speedup: {t_orig / t_opt:.2f}x")
+
+# Check equivalence
+print("Checking mathematical equivalence of outputs:")
+if res_orig.equals(res_opt):
+    print("SUCCESS: Results are 100% equivalent!")
+else:
+    print("WARNING: Results differ!")
+    print("Original top 5:")
+    print(res_orig.head())
+    print("Optimized top 5:")
+    print(res_opt.head())

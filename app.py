@@ -337,18 +337,22 @@ slippage_pct = st.sidebar.slider("Execution Slippage %", min_value=0.0, max_valu
 st.sidebar.subheader("🛡️ Setup & Filters")
 sweep_mode_label = st.sidebar.selectbox(
     "Sweep Mode",
-    options=["Single Sweep & Reclaim", "Double Sweep & Accumulation", "Triple Sweep & Accumulation", "Double & Triple Sweep"],
+    options=["Single Sweep & Reclaim", "Double Sweep & Accumulation", "Triple Sweep & Accumulation", "Quadruple Sweep & Accumulation", "Double & Triple Sweep", "Double, Triple & Quadruple Sweep"],
     index=0
 )
 
 if "Single" in sweep_mode_label:
     sweep_mode = "single"
+elif "Double" in sweep_mode_label and "Triple" in sweep_mode_label and "Quadruple" in sweep_mode_label:
+    sweep_mode = "double_triple_quad"
 elif "Double" in sweep_mode_label and "Triple" in sweep_mode_label:
     sweep_mode = "both"
 elif "Double" in sweep_mode_label:
     sweep_mode = "double"
-else:
+elif "Triple" in sweep_mode_label:
     sweep_mode = "triple"
+else:
+    sweep_mode = "quadruple"
 
 # MULTI-SELECT TRIGGER CONFIRMATION
 triggers_selected = st.sidebar.multiselect(
@@ -388,7 +392,7 @@ if not trigger_modes:
 
 trade_direction_label = st.sidebar.selectbox(
     "Trade Direction",
-    options=["Both (Long & Short)", "Long Only (Sweeps Only)", "Short Only (Sweeps Only)"],
+    options=["Both (Long & Short)", "Long Only (Sweeps & Breakouts)", "Short Only (Sweeps & Breakouts)"],
     index=0
 )
 trade_direction = "both" if "Both" in trade_direction_label else ("long" if "Long" in trade_direction_label else "short")
@@ -433,17 +437,35 @@ atr_penetration_factor = 0.25
 use_atr_tp = False
 atr_tp_factor = 2.5
 use_time_filter = False
+enable_single_breakout = False
+enable_double_breakout = False
 enable_breakout_reversal = False
+enable_quad_breakout = False
 breakout_sl_pct = 20.0
 breakout_only = False
 
 if enable_institutional:
+    enable_single_breakout = st.sidebar.checkbox(
+        "Failed Single Sweep Breakout Flip",
+        value=True,
+        help="If a Single Sweep fails (breaks support/resistance), immediately flips and enters a breakout trade in the opposite direction."
+    )
+    enable_double_breakout = st.sidebar.checkbox(
+        "Failed Double Sweep Breakout Flip",
+        value=True,
+        help="If a Double Sweep fails (breaks support/resistance), immediately flips and enters a breakout trade in the opposite direction."
+    )
     enable_breakout_reversal = st.sidebar.checkbox(
         "Failed Triple Sweep Breakout Flip",
         value=True,
         help="If a Triple Sweep fails (breaks support/resistance), immediately flips and enters a breakout trade in the opposite direction."
     )
-    if enable_breakout_reversal:
+    enable_quad_breakout = st.sidebar.checkbox(
+        "Failed Quad Sweep Breakout Flip",
+        value=True,
+        help="If a Quadruple Sweep fails (breaks support/resistance), immediately flips and enters a breakout trade in the opposite direction."
+    )
+    if enable_breakout_reversal or enable_quad_breakout or enable_double_breakout or enable_single_breakout:
         breakout_sl_pct = st.sidebar.slider(
             "Breakout Stop Loss %",
             min_value=0.1, max_value=20.0, value=20.0, step=0.1,
@@ -484,6 +506,104 @@ if enable_institutional:
             "Take Profit Size (ATR Multiple)", 
             min_value=1.0, max_value=5.0, value=2.5, step=0.1
         )
+
+# --- CUSTOM TAKE PROFITS BY SETUP TYPE ---
+custom_tp_dict = None
+double_rr = rr_ratio
+triple_rr = rr_ratio
+quad_rr = rr_ratio
+single_breakout_rr = rr_ratio
+double_breakout_rr = rr_ratio
+triple_breakout_rr = rr_ratio
+quad_breakout_rr = rr_ratio
+
+double_fixed_tp = fixed_tp_pct
+triple_fixed_tp = fixed_tp_pct
+quad_fixed_tp = fixed_tp_pct
+single_breakout_fixed_tp = fixed_tp_pct
+double_breakout_fixed_tp = fixed_tp_pct
+triple_breakout_fixed_tp = fixed_tp_pct
+quad_breakout_fixed_tp = fixed_tp_pct
+
+double_atr_tp = atr_tp_factor
+triple_atr_tp = atr_tp_factor
+quad_atr_tp = atr_tp_factor
+single_breakout_atr_tp = atr_tp_factor
+double_breakout_atr_tp = atr_tp_factor
+triple_breakout_atr_tp = atr_tp_factor
+quad_breakout_atr_tp = atr_tp_factor
+
+customize_tp = st.sidebar.checkbox(
+    "Customize TP by Setup Type", 
+    value=False,
+    help="Allows setting individual Take Profit targets for Double, Triple, and Quadruple sweeps and Breakouts."
+)
+
+if customize_tp:
+    st.sidebar.markdown("##### ⚙️ Setup Take Profit Targets")
+    if use_atr_tp:
+        double_atr_tp = st.sidebar.slider("Double Sweep TP (ATR)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
+        triple_atr_tp = st.sidebar.slider("Triple Sweep TP (ATR)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
+        quad_atr_tp = st.sidebar.slider("Quad Sweep TP (ATR)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
+        if enable_single_breakout:
+            single_breakout_atr_tp = st.sidebar.slider("Single Breakout TP (ATR)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
+        if enable_double_breakout:
+            double_breakout_atr_tp = st.sidebar.slider("Double Breakout TP (ATR)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
+        if enable_breakout_reversal:
+            triple_breakout_atr_tp = st.sidebar.slider("Triple Breakout TP (ATR)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
+        if enable_quad_breakout:
+            quad_breakout_atr_tp = st.sidebar.slider("Quad Breakout TP (ATR)", min_value=1.0, max_value=5.0, value=2.5, step=0.1)
+    elif sltp_mode == "percentage":
+        double_fixed_tp = st.sidebar.slider("Double Sweep TP %", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
+        triple_fixed_tp = st.sidebar.slider("Triple Sweep TP %", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
+        quad_fixed_tp = st.sidebar.slider("Quad Sweep TP %", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
+        if enable_single_breakout:
+            single_breakout_fixed_tp = st.sidebar.slider("Single Breakout TP %", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
+        if enable_double_breakout:
+            double_breakout_fixed_tp = st.sidebar.slider("Double Breakout TP %", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
+        if enable_breakout_reversal:
+            triple_breakout_fixed_tp = st.sidebar.slider("Triple Breakout TP %", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
+        if enable_quad_breakout:
+            quad_breakout_fixed_tp = st.sidebar.slider("Quad Breakout TP %", min_value=0.1, max_value=20.0, value=2.0, step=0.1)
+    else:
+        double_rr = st.sidebar.slider("Double Sweep TP (R:R)", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+        triple_rr = st.sidebar.slider("Triple Sweep TP (R:R)", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+        quad_rr = st.sidebar.slider("Quad Sweep TP (R:R)", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+        if enable_single_breakout:
+            single_breakout_rr = st.sidebar.slider("Single Breakout TP (R:R)", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+        if enable_double_breakout:
+            double_breakout_rr = st.sidebar.slider("Double Breakout TP (R:R)", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+        if enable_breakout_reversal:
+            triple_breakout_rr = st.sidebar.slider("Triple Breakout TP (R:R)", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+        if enable_quad_breakout:
+            quad_breakout_rr = st.sidebar.slider("Quad Breakout TP (R:R)", min_value=1.0, max_value=5.0, value=2.0, step=0.1)
+
+# Build custom TP dict to pass to backend
+custom_tp_dict = {
+    "double_rr": double_rr,
+    "triple_rr": triple_rr,
+    "quad_rr": quad_rr,
+    "single_breakout_rr": single_breakout_rr,
+    "double_breakout_rr": double_breakout_rr,
+    "triple_breakout_rr": triple_breakout_rr,
+    "quad_breakout_rr": quad_breakout_rr,
+    
+    "double_fixed_tp": double_fixed_tp,
+    "triple_fixed_tp": triple_fixed_tp,
+    "quad_fixed_tp": quad_fixed_tp,
+    "single_breakout_fixed_tp": single_breakout_fixed_tp,
+    "double_breakout_fixed_tp": double_fixed_tp,
+    "triple_breakout_fixed_tp": triple_breakout_fixed_tp,
+    "quad_breakout_fixed_tp": quad_breakout_fixed_tp,
+    
+    "double_atr_tp": double_atr_tp,
+    "triple_atr_tp": triple_atr_tp,
+    "quad_atr_tp": quad_atr_tp,
+    "single_breakout_atr_tp": single_breakout_atr_tp,
+    "double_breakout_atr_tp": double_breakout_atr_tp,
+    "triple_breakout_atr_tp": triple_breakout_atr_tp,
+    "quad_breakout_atr_tp": quad_breakout_atr_tp
+}
 
 # Caching the historical candle downloads to make updates INSTANT
 def get_cached_history(symbol, interval, days, market_choice):
@@ -544,7 +664,11 @@ if st.sidebar.button("⚡ Run Portfolio Backtest", width='stretch'):
                         use_time_filter=use_time_filter,
                         enable_breakout_reversal=enable_breakout_reversal,
                         breakout_sl_pct=breakout_sl_pct,
-                        breakout_only=breakout_only
+                        breakout_only=breakout_only,
+                        enable_quad_breakout=enable_quad_breakout,
+                        enable_double_breakout=enable_double_breakout,
+                        enable_single_breakout=enable_single_breakout,
+                        custom_tp_dict=custom_tp_dict
                     )
                     
                 # 3. Simulate multi-asset chronological trading
@@ -581,10 +705,15 @@ if st.sidebar.button("⚡ Run Portfolio Backtest", width='stretch'):
                 st.session_state.backtest_use_atr_tp = use_atr_tp
                 st.session_state.backtest_atr_tp_factor = atr_tp_factor
                 st.session_state.backtest_use_time_filter = use_time_filter
+                st.session_state.backtest_enable_single_breakout = enable_single_breakout
+                st.session_state.backtest_enable_double_breakout = enable_double_breakout
                 st.session_state.backtest_enable_breakout_reversal = enable_breakout_reversal
+                st.session_state.backtest_enable_quad_breakout = enable_quad_breakout
                 st.session_state.backtest_breakout_sl_pct = breakout_sl_pct
                 st.session_state.backtest_breakout_only = breakout_only
                 st.session_state.backtest_max_concurrent_trades = max_concurrent_trades
+                st.session_state.backtest_custom_tp_dict = custom_tp_dict
+                st.session_state.backtest_customize_tp = customize_tp
 
 # Display results from session_state (persists when other buttons are clicked)
 if "backtest_results" in st.session_state:
@@ -610,9 +739,12 @@ if "backtest_results" in st.session_state:
     backtest_atr_tp_factor = st.session_state.get("backtest_atr_tp_factor", 2.5)
     backtest_use_time_filter = st.session_state.get("backtest_use_time_filter", False)
     backtest_enable_breakout_reversal = st.session_state.get("backtest_enable_breakout_reversal", False)
+    backtest_enable_quad_breakout = st.session_state.get("backtest_enable_quad_breakout", False)
     backtest_breakout_sl_pct = st.session_state.get("backtest_breakout_sl_pct", 1.0)
     backtest_breakout_only = st.session_state.get("backtest_breakout_only", False)
     backtest_max_concurrent_trades = st.session_state.get("backtest_max_concurrent_trades", 2)
+    backtest_custom_tp_dict = st.session_state.get("backtest_custom_tp_dict", None)
+    backtest_customize_tp = st.session_state.get("backtest_customize_tp", False)
     
     metrics = results["metrics"]
     trades = results["trades"]
@@ -889,7 +1021,24 @@ if "backtest_results" in st.session_state:
                         trade_direction=trade_direction,
                         rolling_window=rolling_window,
                         trigger_modes=trigger_modes,
-                        trigger_logic=trigger_logic
+                        trigger_logic=trigger_logic,
+                        use_trailing_sl=use_trailing_sl,
+                        trailing_trigger_pct=trailing_trigger_pct,
+                        trailing_distance_pct=trailing_distance_pct,
+                        max_concurrent_trades=max_concurrent_trades,
+                        use_fixed_session_levels=use_fixed_session_levels,
+                        use_atr_penetration=use_atr_penetration,
+                        atr_penetration_factor=atr_penetration_factor,
+                        use_atr_tp=use_atr_tp,
+                        atr_tp_factor=atr_tp_factor,
+                        use_time_filter=use_time_filter,
+                        enable_breakout_reversal=enable_breakout_reversal,
+                        breakout_sl_pct=breakout_sl_pct,
+                        breakout_only=breakout_only,
+                        enable_quad_breakout=enable_quad_breakout,
+                        enable_double_breakout=enable_double_breakout,
+                        enable_single_breakout=enable_single_breakout,
+                        custom_tp_dict=custom_tp_dict
                     )
                     st.success("Optimization Complete! Ranked Parameters by Sharpe Ratio:")
                     st.dataframe(opt_results, width='stretch')
@@ -1028,7 +1177,20 @@ if "backtest_results" in st.session_state:
                                 fixed_tp_pct=fixed_tp_pct,
                                 rolling_window=96,
                                 trigger_modes=trigger_modes,
-                                trigger_logic=trigger_logic
+                                trigger_logic=trigger_logic,
+                                use_fixed_session_levels=use_fixed_session_levels,
+                                use_atr_penetration=use_atr_penetration,
+                                atr_penetration_factor=atr_penetration_factor,
+                                use_atr_tp=use_atr_tp,
+                                atr_tp_factor=atr_tp_factor,
+                                use_time_filter=use_time_filter,
+                                enable_breakout_reversal=enable_breakout_reversal,
+                                breakout_sl_pct=breakout_sl_pct,
+                                breakout_only=breakout_only,
+                                enable_quad_breakout=enable_quad_breakout,
+                                enable_double_breakout=enable_double_breakout,
+                                enable_single_breakout=enable_single_breakout,
+                                custom_tp_dict=custom_tp_dict
                             )
                             st.session_state.live_scan_data = {
                                 "df": df_live_signals,
@@ -1217,14 +1379,31 @@ if "backtest_results" in st.session_state:
             
             trader = st.session_state.paper_trader
             
+            # Calculate open duration if position exists
+            duration_str = ""
+            if trader.position:
+                try:
+                    entry_dt = datetime.strptime(trader.position["entry_time"], "%Y-%m-%d %H:%M:%S")
+                    elapsed = datetime.now() - entry_dt
+                    total_secs = int(elapsed.total_seconds())
+                    hours, remainder = divmod(total_secs, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    if hours > 0:
+                        duration_str = f"{hours}h {minutes}m {seconds}s"
+                    else:
+                        duration_str = f"{minutes}m {seconds}s"
+                except Exception:
+                    duration_str = "Unknown"
+            
             # Config card
+            pos_display = 'FLAT' if trader.position is None else f"{trader.position['side']} @ ${trader.position['entry_price']:,.2f} (Open: {duration_str})"
             st.markdown(f"""
             <div class="config-preview" style="margin: 15px 0;">
                 <div class="config-row"><span class="config-label">Symbol</span><span class="config-value">{pt_symbol}</span></div>
                 <div class="config-row"><span class="config-label">Balance</span><span class="config-value-green">${trader.balance:,.2f}</span></div>
                 <div class="config-row"><span class="config-label">Leverage</span><span class="config-value">{pt_leverage}x</span></div>
                 <div class="config-row"><span class="config-label">Triggers</span><span class="config-value">{", ".join(trigger_modes)} ({trigger_logic})</span></div>
-                <div class="config-row"><span class="config-label">Position</span><span class="config-value">{'FLAT' if trader.position is None else f"{trader.position['side']} @ ${trader.position['entry_price']:,.2f}"}</span></div>
+                <div class="config-row"><span class="config-label">Position</span><span class="config-value">{pos_display}</span></div>
                 <div class="config-row"><span class="config-label">Trades</span><span class="config-value">{trader.trade_count}</span></div>
             </div>
             """, unsafe_allow_html=True)
@@ -1272,7 +1451,20 @@ if "backtest_results" in st.session_state:
                         fixed_tp_pct=fixed_tp_pct,
                         rolling_window=96,
                         trigger_modes=trigger_modes,
-                        trigger_logic=trigger_logic
+                        trigger_logic=trigger_logic,
+                        use_fixed_session_levels=use_fixed_session_levels,
+                        use_atr_penetration=use_atr_penetration,
+                        atr_penetration_factor=atr_penetration_factor,
+                        use_atr_tp=use_atr_tp,
+                        atr_tp_factor=atr_tp_factor,
+                        use_time_filter=use_time_filter,
+                        enable_breakout_reversal=enable_breakout_reversal,
+                        breakout_sl_pct=breakout_sl_pct,
+                        breakout_only=breakout_only,
+                        enable_quad_breakout=enable_quad_breakout,
+                        enable_double_breakout=enable_double_breakout,
+                        enable_single_breakout=enable_single_breakout,
+                        custom_tp_dict=custom_tp_dict
                     )
                     st.session_state.paper_scan_data = {
                         "df": df_paper_signals,
@@ -1290,7 +1482,7 @@ if "backtest_results" in st.session_state:
                 live_price = current["close"]
                 
                 # Show live price
-                price_col1, price_col2, price_col3 = st.columns(3)
+                price_col1, price_col2, price_col3, price_col4 = st.columns(4)
                 with price_col1:
                     st.metric(f"{pt_symbol} Live Price", f"${live_price:,.2f}")
                 with price_col2:
@@ -1301,6 +1493,11 @@ if "backtest_results" in st.session_state:
                         st.metric("Unrealized PnL", f"${upnl:+,.2f}", delta=f"{(upnl/trader.position['margin_used'])*100:+.1f}%")
                     else:
                         st.metric("Position", "FLAT")
+                with price_col4:
+                    if trader.position:
+                        st.metric("Trade Duration", duration_str)
+                    else:
+                        st.metric("Trade Duration", "—")
                 
                 # Check open position
                 if trader.position:
@@ -1578,7 +1775,24 @@ else:
                 {f'<div class="config-row"><span class="config-label">Volatility Sweep</span><span class="config-value">{"ON ("+str(atr_penetration_factor)+"x ATR)" if use_atr_penetration else "OFF"}</span></div>' if enable_institutional and use_atr_penetration else ''}
                 {f'<div class="config-row"><span class="config-label">Time Filter</span><span class="config-value">{"ON (London & NY)" if use_time_filter else "OFF"}</span></div>' if enable_institutional and use_time_filter else ''}
                 {f'<div class="config-row"><span class="config-label">Volatility TP</span><span class="config-value">{"ON ("+str(atr_tp_factor)+"x ATR)" if use_atr_tp else "OFF"}</span></div>' if enable_institutional and use_atr_tp else ''}
-                {f'<div class="config-row"><span class="config-label">Breakout Flip</span><span class="config-value">{"ON (SL "+str(breakout_sl_pct)+"%)" if enable_breakout_reversal else "OFF"}</span></div>' if enable_institutional and enable_breakout_reversal else ''}
+                {f'<div class="config-row"><span class="config-label">Triple Breakout Flip</span><span class="config-value">{"ON (SL "+str(breakout_sl_pct)+"%)" if enable_breakout_reversal else "OFF"}</span></div>' if enable_institutional and enable_breakout_reversal else ''}
+                {f'<div class="config-row"><span class="config-label">Quad Breakout Flip</span><span class="config-value">{"ON (SL "+str(breakout_sl_pct)+"%)" if enable_quad_breakout else "OFF"}</span></div>' if enable_institutional and enable_quad_breakout else ''}
+                {f'<div class="config-row" style="border-top:1px solid rgba(255,255,255,0.15);padding-top:10px;"><span class="config-label" style="font-weight:bold;color:#facc15;">⚙️ Custom Take Profits</span><span class="config-value-green">ACTIVE</span></div>' if customize_tp else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Double TP</span><span class="config-value">{double_atr_tp}x ATR</span></div>' if customize_tp and use_atr_tp else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Triple TP</span><span class="config-value">{triple_atr_tp}x ATR</span></div>' if customize_tp and use_atr_tp else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Quad TP</span><span class="config-value">{quad_atr_tp}x ATR</span></div>' if customize_tp and use_atr_tp else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Triple BO TP</span><span class="config-value">{triple_breakout_atr_tp}x ATR</span></div>' if customize_tp and use_atr_tp and enable_breakout_reversal else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Quad BO TP</span><span class="config-value">{quad_breakout_atr_tp}x ATR</span></div>' if customize_tp and use_atr_tp and enable_quad_breakout else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Double TP</span><span class="config-value">{double_fixed_tp}%</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "percentage" else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Triple TP</span><span class="config-value">{triple_fixed_tp}%</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "percentage" else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Quad TP</span><span class="config-value">{quad_fixed_tp}%</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "percentage" else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Triple BO TP</span><span class="config-value">{triple_breakout_fixed_tp}%</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "percentage" and enable_breakout_reversal else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Quad BO TP</span><span class="config-value">{quad_breakout_fixed_tp}%</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "percentage" and enable_quad_breakout else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Double TP</span><span class="config-value">{double_rr}x R:R</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "structure" else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Triple TP</span><span class="config-value">{triple_rr}x R:R</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "structure" else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Quad TP</span><span class="config-value">{quad_rr}x R:R</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "structure" else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Triple BO TP</span><span class="config-value">{triple_breakout_rr}x R:R</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "structure" and enable_breakout_reversal else ''}
+                {f'<div class="config-row" style="padding-left:15px;font-size:0.85em;"><span class="config-label">↳ Quad BO TP</span><span class="config-value">{quad_breakout_rr}x R:R</span></div>' if customize_tp and not use_atr_tp and sltp_mode == "structure" and enable_quad_breakout else ''}
             </div>
         """, unsafe_allow_html=True)
     
@@ -1615,13 +1829,21 @@ else:
                 
                 *This combination captures the high frequency of double sweeps along with the maximum-tier confirmation of triple sweeps, giving you the best of both worlds!*
                 """)
-        else:
+        elif sweep_mode == "triple":
             with st.expander("3️⃣ Triple Sweep Mode (Currently Active)", expanded=True):
                 st.markdown("""
                 **LONG**: Price sweeps 24h Low **three times** (L1 → reclaim → L3 sweep → reclaim → L5 sweep lower) → reclaims above L3 → trigger fires → **Enter Long** 🟢  
                 **SHORT**: Price sweeps 24h High **three times** (H1 → reclaim → H3 sweep → reclaim → H5 sweep higher) → reclaims below H3 → trigger fires → **Enter Short** 🔴  
                 
                 *Triple sweep represents maximum-tier institutional stop-hunts. Outstanding accuracy but extremely rare.*
+                """)
+        else:
+            with st.expander("4️⃣ Quadruple Sweep Mode (Currently Active)", expanded=True):
+                st.markdown("""
+                **LONG**: Price sweeps 24h Low **four times** (L1 → reclaim → L3 sweep → reclaim → L5 sweep → reclaim → L7 sweep lower) → reclaims above L4 → trigger fires → **Enter Long** 🟢  
+                **SHORT**: Price sweeps 24h High **four times** (H1 → reclaim → H3 sweep → reclaim → H5 sweep → reclaim → H7 sweep higher) → reclaims below H4 → trigger fires → **Enter Short** 🔴  
+                
+                *Quadruple sweep represents the absolute extreme tier of stop-hunting and accumulation/distribution before major expansion.*
                 """)
         
         with st.expander("🎯 Entry Triggers Explained", expanded=False):
